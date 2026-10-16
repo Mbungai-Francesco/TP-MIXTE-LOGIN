@@ -1,1 +1,4 @@
-venv
+.DS_Store
+.venv
+.env
+keys/private_key.pem

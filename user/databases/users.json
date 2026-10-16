@@ -2,36 +2,57 @@
   "users": [
     {
       "id": "chris_rivers",
+      "email": "chris@gmail.com",
+      "password": "root",
+      "role": "ADMIN",
       "name": "Chris Rivers",
-      "last_active":1360031010
+      "last_active": 1360031010
     },
     {
       "id": "peter_curley",
+      "email": "peter@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Peter Curley",
       "last_active": 1360031222
     },
     {
       "id": "garret_heaton",
+      "email": "garret@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Garret Heaton",
       "last_active": 1360031425
     },
     {
       "id": "michael_scott",
+      "email": "micheal@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Michael Scott",
       "last_active": 1360031625
     },
     {
       "id": "jim_halpert",
+      "email": "halpert@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Jim Halpert",
       "last_active": 1360031325
     },
     {
       "id": "pam_beesly",
+      "email": "beesly@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Pam Beesly",
       "last_active": 1360031225
     },
     {
       "id": "dwight_schrute",
+      "email": "dwight@gmail.com",
+      "password": "root",
+      "role": "USER",
       "name": "Dwight Schrute",
       "last_active": 1360031202
     }

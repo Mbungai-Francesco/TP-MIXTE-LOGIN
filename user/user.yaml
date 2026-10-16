@@ -1,0 +1,402 @@
+openapi: 3.0.3
+
+info:
+  title: User Service API
+  version: "1.0.0"
+  description: |
+    Manages the users of the cinema and issues JWT tokens.
+
+    ## Authentication (JWT)
+    1. Call `POST /login` with an id and a password.
+    2. You get a JWT signed with HS256 using the `JWT_SECRET` shared by all services.
+    3. Send it on every protected request: `Authorization: Bearer <token>`.
+
+    Token payload:
+    ```json
+    { "sub": "chris_rivers", "role": "user", "iat": 1700000000, "exp": 1700003600 }
+    ```
+
+    - `401`: the token is missing, invalid or expired.
+    - `403`: the token is valid, but the role is not allowed, or a user is
+      trying to access another user's account.
+
+    Roles: **user** manages only their own account. **admin** manages every account.
+  contact:
+    name: Mbungai Francesco
+
+servers:
+  - url: http://localhost:3203
+    description: Local development server
+
+tags:
+  - name: auth
+    description: Log in and get a token (public)
+  - name: user
+    description: Operations for any authenticated user (on their own account)
+  - name: admin
+    description: Operations reserved to administrators
+
+# By default every endpoint needs a JWT.
+# Public endpoints override this with `security: []`.
+security:
+  - bearerAuth: []
+
+paths:
+  /:
+    get:
+      tags: [auth]
+      summary: Service home page
+      operationId: home
+      security: []
+      responses:
+        "200":
+          description: HTML welcome message
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<h1 style='color:blue'>Welcome to the User service!</h1>"
+
+  
+  /login:
+    post:
+      tags: [auth]
+      summary: Log in and get a JWT
+      description: Checks the credentials and returns a signed access token.
+      operationId: login
+      security: []  
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              id: chris_rivers
+              password: "secret123"
+      responses:
+        "200":
+          description: Authentication succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Wrong id or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Invalid credentials
+
+  /users:
+    get:
+      tags: [admin]
+      summary: List all users
+      description: Admin only. A user cannot see the other users.
+      operationId: getUsers
+      responses:
+        "200":
+          description: List of users (passwords are never returned)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [auth, admin]
+      summary: Register a new user
+      description: |
+        Public endpoint used to sign up. The new user always gets the `user` role.
+        Only an authenticated admin can create a user with the `admin` role.
+      operationId: createUser
+      # Token is optional: `{}` = anonymous, `bearerAuth` = logged in (needed to create an admin)
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+            example:
+              id: john_doe
+              name: John Doe
+              password: "secret123"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /users/me:
+    get:
+      tags: [user]
+      summary: Get the profile of the authenticated user
+      operationId: getMe
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/{userid}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+
+    get:
+      tags: [admin]
+      summary: Get a user by id
+      operationId: getUser
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [user]
+      summary: Update a user (owner or admin)
+      description: A user can change their own name and password. Only an admin can change `role`.
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+            example:
+              name: Christopher Rivers
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [user]
+      summary: Delete a user (owner or admin)
+      description: The bookings of the user can then be removed with `DELETE /bookings/{userid}` on the Booking service.
+      operationId: deleteUser
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: user deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT from `POST /login`. Header: `Authorization: Bearer <token>`"
+
+  parameters:
+    UserId:
+      name: userid
+      in: path
+      required: true
+      description: User id (username)
+      schema:
+        type: string
+      example: chris_rivers
+
+  responses:
+    BadRequest:
+      description: The request body is missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "missing field: password"
+    Unauthorized:
+      description: The JWT is missing, invalid or expired
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: token is missing or invalid
+    Forbidden:
+      description: The token does not allow this operation (not admin, or not the owner)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: forbidden
+    NotFound:
+      description: The user does not exist
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: user not found
+    Conflict:
+      description: A user with this id already exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: user already exists
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: chris@gmail.com
+        password:
+          type: string
+          format: password
+          example: secret123
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaHJpc19yaXZlcnMiLCJyb2xlIjoiY2xpZW50IiwiZXhwIjoxNzAwMDAzNjAwfQ.signature
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Lifetime of the token in seconds
+          example: 3600
+
+    Role:
+      type: string
+      enum: [user, admin]
+      example: user
+
+    User:
+      type: object
+      required: [id, name, role]
+      properties:
+        id:
+          type: string
+          example: chris_rivers
+        name:
+          type: string
+          example: Chris Rivers
+        role:
+          $ref: "#/components/schemas/Role"
+        last_active:
+          type: integer
+          format: int64
+          description: Unix timestamp of the last login
+          example: 1360031010
+
+    UserCreate:
+      type: object
+      required: [id, name, password]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9_]{3,32}$'
+          example: john_doe
+        name:
+          type: string
+          example: John Doe
+        password:
+          type: string
+          format: password
+          minLength: 6
+          writeOnly: true
+          description: Stored hashed (for example with werkzeug.security.generate_password_hash)
+        role:
+          allOf:
+            - $ref: "#/components/schemas/Role"
+          description: Ignored unless the caller is an admin
+
+    UserUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 6
+          writeOnly: true
+        role:
+          allOf:
+            - $ref: "#/components/schemas/Role"
+          description: Admin only
