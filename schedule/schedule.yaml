@@ -1,0 +1,516 @@
+# =====================================================================
+# Schedule service - OpenAPI documentation
+# ---------------------------------------------------------------------
+# Port: 3003
+# Database: MongoDB, collection `schedules` (seeded from data/times.json)
+#
+# One schedule = one movie shown on one date, with a status:
+#   DRAFT     -> being prepared, only visible to admins (default on creation)
+#   AVAILABLE -> open, visible to everyone (only these can be booked)
+#   CANCELED  -> canceled, final (cannot be reopened)
+# A movie is shown at most once per date: (date, movie_id) is unique.
+#
+# Calls to other services (the caller's `Authorization` header is forwarded):
+#   Schedule -> Movie (GraphQL `movie_with_id`): checks the movie id when a
+#                     schedule is created (it must exist and be AVAILABLE).
+#   Schedule -> Movie (GraphQL `all_movies`): adds the movie details on the
+#                     `/details` routes (one call for the whole list).
+#   Schedule -> Booking (GraphQL `cancel_schedules_bookings`): when schedules
+#                     are canceled or deleted, their bookings become CANCELED first.
+#                     If Booking is down, nothing is changed (502).
+#
+# Calls from other services:
+#   Movie -> Schedule (REST `PUT /schedules/movies/{movieid}/cancel`): before
+#                     a movie gets the DELETED status, its schedules become CANCELED.
+#   Booking -> Schedule (REST `GET /schedules/{scheduleid}`): checks that a
+#                     schedule exists and is AVAILABLE before a booking;
+#                     (REST `GET /schedules`): shows the schedules of the bookings.
+#
+# Security: every endpoint except "/" needs a JWT issued by the User
+# service. Reading is open to every authenticated user; writing is
+# reserved to admins.
+# =====================================================================
+openapi: 3.0.3
+
+info:
+  title: Schedule Service API
+  version: "2.0.0"
+  description: |
+    Manages the dates on which the movies are shown.
+
+    ## Authentication (JWT)
+    Get a token with `POST /login` on the User service (port 3004), then send it
+    on every request: `Authorization: Bearer <token>`.
+    The token is checked locally with the public key `keys/public_key.pem` (RS256),
+    and the role is read from the `role` claim.
+
+    - `401`: the token is missing, invalid or expired.
+    - `403`: the token is valid, but the operation needs the `ADMIN` role.
+
+    ## Status
+    | Status | Meaning | Visible to |
+    |---|---|---|
+    | `DRAFT` | being prepared (default on creation) | ADMIN only |
+    | `AVAILABLE` | open for booking | everyone |
+    | `CANCELED` | canceled, final | everyone |
+
+servers:
+  - url: http://localhost:3003
+    description: Local development server
+
+tags:
+  - name: user
+    description: Operations available to every authenticated user
+  - name: admin
+    description: Secured admin-only calls
+
+# By default every endpoint needs a JWT
+security:
+  - bearerAuth: []
+
+paths:
+  /:
+    get:
+      tags: [user]
+      summary: Service home page
+      operationId: home
+      security: []
+      responses:
+        "200":
+          description: HTML welcome message
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<h1 style='color:blue'>Welcome to the Showtime service!</h1>"
+
+  /schedules:
+    get:
+      tags: [user]
+      summary: List the schedules, with optional filters
+      description: |
+        Without filter, returns every schedule, sorted by date.
+        A `USER` never sees the `DRAFT` schedules (asking `status=DRAFT` gives a 403).
+
+        Used by the Booking service to show the schedules of the bookings,
+        and (with `movie_id`) to find the bookings of a movie.
+      operationId: getSchedules
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Date"
+        - name: movie_id
+          in: query
+          required: false
+          schema:
+            type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Status"
+      responses:
+        "200":
+          description: Matching schedules (may be empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+    post:
+      tags: [admin]
+      summary: Schedule a movie on a date
+      description: |
+        Creates a schedule, with the `DRAFT` status by default.
+        The movie id is checked with the Movie service (GraphQL `movie_with_id`).
+      operationId: createSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleCreate"
+            example:
+              date: "20251224"
+              movie_id: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+      responses:
+        "201":
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: This movie is already scheduled on this date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: this movie is already scheduled on this date
+        "422":
+          description: The movie id does not exist in the Movie service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: "unknown movie: 00000000-0000-0000-0000-000000000000"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /schedules/details:
+    get:
+      tags: [user]
+      summary: "[Schedule -> Movie] List the schedules with the details of their movie"
+      description: |
+        Same filters and visibility rules as `GET /schedules`. Each schedule gets a
+        `movie` field, filled with one GraphQL call to the Movie service
+        (`all_movies`). `movie` is `null` when the movie does not exist, or when
+        it is `DELETED` and the caller is not an admin.
+      operationId: getSchedulesDetails
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Date"
+        - name: movie_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Status"
+      responses:
+        "200":
+          description: Matching schedules with their movie (may be empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DetailedSchedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /schedules/{scheduleid}/details:
+    get:
+      tags: [user]
+      summary: "[Schedule -> Movie] Get a schedule with the details of its movie"
+      operationId: getScheduleDetails
+      parameters:
+        - $ref: "#/components/parameters/ScheduleId"
+      responses:
+        "200":
+          description: Schedule with its movie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailedSchedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+
+  /schedules/movies/{movieid}/cancel:
+    put:
+      tags: [admin]
+      summary: "[Movie -> Schedule] Cancel every schedule of a movie"
+      description: |
+        Called by the Movie service (`delete_movie` mutation) before a movie is deleted.
+        Every schedule of the movie that is not canceled yet becomes `CANCELED`,
+        after its bookings were canceled on the Booking service.
+      operationId: cancelMovieSchedules
+      parameters:
+        - name: movieid
+          in: path
+          required: true
+          schema:
+            type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+      responses:
+        "200":
+          description: Number of schedules that were canceled (may be 0)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  movie_id:
+                    type: string
+                    example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+                  canceled:
+                    type: integer
+                    example: 3
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/BookingUnavailable"
+
+  /schedules/{scheduleid}:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleId"
+
+    get:
+      tags: [user]
+      summary: Get a schedule by id
+      description: A `DRAFT` schedule is reported as not found to a `USER`.
+      operationId: getSchedule
+      responses:
+        "200":
+          description: Schedule found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [admin]
+      summary: Delete a schedule
+      description: Its bookings become CANCELED on the Booking service first.
+      operationId: deleteSchedule
+      responses:
+        "200":
+          description: Schedule deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+              example:
+                message: schedule deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/BookingUnavailable"
+
+  /schedules/{scheduleid}/{status}:
+    put:
+      tags: [admin]
+      summary: Change the status of a schedule
+      description: |
+        `CANCELED` is final: a canceled schedule cannot be reopened.
+        When a schedule becomes `CANCELED`, its bookings become CANCELED on the Booking service first.
+      operationId: updateScheduleStatus
+      parameters:
+        - $ref: "#/components/parameters/ScheduleId"
+        - name: status
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Status"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The schedule is canceled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: a canceled schedule cannot be reopened
+        "502":
+          $ref: "#/components/responses/BookingUnavailable"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT from `POST /login` on the User service. Header: `Authorization: Bearer <token>`"
+
+  parameters:
+    ScheduleId:
+      name: scheduleid
+      in: path
+      required: true
+      description: Schedule id (UUID)
+      schema:
+        type: string
+      example: 2c064f12-5368-4c94-a1ce-77f6f2f7f86f
+
+  responses:
+    BadRequest:
+      description: The request is missing a field, or a value is invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "invalid date: expected YYYYMMDD"
+    Unauthorized:
+      description: The JWT is missing, invalid or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: token is missing or invalid
+    Forbidden:
+      description: The operation needs the ADMIN role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: forbidden
+    NotFound:
+      description: The schedule does not exist
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: schedule not found
+    BadGateway:
+      description: The Movie service is down or returned an unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Movie service unavailable
+    BookingUnavailable:
+      description: The Booking service is down, so the bookings could not be canceled; nothing was changed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: Booking service unavailable
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    Date:
+      type: string
+      pattern: '^\d{8}$'
+      description: Date in the format YYYYMMDD
+      example: "20151201"
+
+    Status:
+      type: string
+      enum: [DRAFT, AVAILABLE, CANCELED]
+      example: AVAILABLE
+
+    Schedule:
+      type: object
+      required: [id, date, movie_id, status]
+      properties:
+        id:
+          type: string
+          example: 2c064f12-5368-4c94-a1ce-77f6f2f7f86f
+        date:
+          $ref: "#/components/schemas/Date"
+        movie_id:
+          type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+        status:
+          $ref: "#/components/schemas/Status"
+
+    # Movie as returned by the Movie service (GraphQL)
+    Movie:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+        title:
+          type: string
+          example: Creed
+        director:
+          type: string
+          example: Ryan Coogler
+        rating:
+          type: number
+          format: float
+          example: 8.8
+        status:
+          type: string
+          enum: [AVAILABLE, DELETED]
+          description: DELETED movies are only visible to admins
+          example: AVAILABLE
+
+    DetailedSchedule:
+      allOf:
+        - $ref: "#/components/schemas/Schedule"
+        - type: object
+          properties:
+            movie:
+              allOf:
+                - $ref: "#/components/schemas/Movie"
+              nullable: true
+              description: null when the movie does not exist, or is DELETED and the caller is not an admin
+
+    ScheduleCreate:
+      type: object
+      required: [date, movie_id]
+      properties:
+        date:
+          $ref: "#/components/schemas/Date"
+        movie_id:
+          type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+        status:
+          allOf:
+            - $ref: "#/components/schemas/Status"
+          description: DRAFT when omitted

@@ -1,55 +1,130 @@
 {
   "schedule": [
     {
-      "date":"20151130",
-      "movies":[
-        "720d006c-3a57-4b6a-b18f-9b713b073f3c",
-        "a8034f44-aee4-44cf-b32c-74cf452aaaae",
-        "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
-      ]
+      "id": "09da9ae3-28a0-4491-8905-79d70fb81ffc",
+      "date": "20151130",
+      "movie_id": "720d006c-3a57-4b6a-b18f-9b713b073f3c",
+      "status": "AVAILABLE"
     },
     {
-      "date":"20151201",
-      "movies":[
-        "267eedb8-0f5d-42d5-8f43-72426b9fb3e6",
-        "7daf7208-be4d-4944-a3ae-c1c2f516f3e6",
-        "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
-        "a8034f44-aee4-44cf-b32c-74cf452aaaae"
-      ]
+      "id": "d06d0d2f-568c-40a2-baa0-3d6b01622369",
+      "date": "20151130",
+      "movie_id": "a8034f44-aee4-44cf-b32c-74cf452aaaae",
+      "status": "AVAILABLE"
     },
     {
-      "date":"20151202",
-      "movies":[
-        "a8034f44-aee4-44cf-b32c-74cf452aaaae",
-        "96798c08-d19b-4986-a05d-7da856efb697",
-        "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
-        "276c79ec-a26a-40a6-b3d3-fb242a5947b6"
-      ]
+      "id": "b5af19d8-fcd7-41a1-b7d9-d6a4476b7a07",
+      "date": "20151130",
+      "movie_id": "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
+      "status": "AVAILABLE"
     },
     {
-      "date":"20151203",
-      "movies":[
-        "720d006c-3a57-4b6a-b18f-9b713b073f3c",
-        "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
-      ]
+      "id": "2c064f12-5368-4c94-a1ce-77f6f2f7f86f",
+      "date": "20151201",
+      "movie_id": "267eedb8-0f5d-42d5-8f43-72426b9fb3e6",
+      "status": "AVAILABLE"
     },
     {
-      "date":"20151204",
-      "movies":[
-        "96798c08-d19b-4986-a05d-7da856efb697",
-        "a8034f44-aee4-44cf-b32c-74cf452aaaae",
-        "7daf7208-be4d-4944-a3ae-c1c2f516f3e6"
-      ]
+      "id": "18c005ed-916f-4d70-8024-6c931f711f95",
+      "date": "20151201",
+      "movie_id": "7daf7208-be4d-4944-a3ae-c1c2f516f3e6",
+      "status": "AVAILABLE"
     },
     {
-      "date":"20151205",
-      "movies":[
-        "96798c08-d19b-4986-a05d-7da856efb697",
-        "a8034f44-aee4-44cf-b32c-74cf452aaaae",
-        "7daf7208-be4d-4944-a3ae-c1c2f516f3e6",
-        "276c79ec-a26a-40a6-b3d3-fb242a5947b6",
-        "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab"
-      ]
+      "id": "4e991869-6790-4ea8-bc6a-c3f9d2ce16b8",
+      "date": "20151201",
+      "movie_id": "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "1dc0eed3-f242-44d1-a918-3a2d0a3dc03c",
+      "date": "20151201",
+      "movie_id": "a8034f44-aee4-44cf-b32c-74cf452aaaae",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "7d0f8b59-40cc-4025-aa53-a92e30dde2c7",
+      "date": "20151202",
+      "movie_id": "a8034f44-aee4-44cf-b32c-74cf452aaaae",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "1db716b6-0d0e-4771-9297-6be9575d47a6",
+      "date": "20151202",
+      "movie_id": "96798c08-d19b-4986-a05d-7da856efb697",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "f5aeac7c-9b36-4b30-b9aa-caf4172bb142",
+      "date": "20151202",
+      "movie_id": "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "97648c14-a689-4a7b-bce9-d23736751a9e",
+      "date": "20151202",
+      "movie_id": "276c79ec-a26a-40a6-b3d3-fb242a5947b6",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "21965dbb-1d03-4242-b539-8454dfb4d9a9",
+      "date": "20151203",
+      "movie_id": "720d006c-3a57-4b6a-b18f-9b713b073f3c",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "772ea7a7-454a-477a-8fed-adf2f368d895",
+      "date": "20151203",
+      "movie_id": "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "0f75e6e5-fa9d-4898-9b84-977f1e16dd9b",
+      "date": "20151204",
+      "movie_id": "96798c08-d19b-4986-a05d-7da856efb697",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "3972789e-b312-4afc-af14-909d8e1ea029",
+      "date": "20151204",
+      "movie_id": "a8034f44-aee4-44cf-b32c-74cf452aaaae",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "d240060b-8c1d-472f-9719-28563517b22c",
+      "date": "20151204",
+      "movie_id": "7daf7208-be4d-4944-a3ae-c1c2f516f3e6",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "f8e1e104-fb12-492d-81d9-c74f92138c34",
+      "date": "20151205",
+      "movie_id": "96798c08-d19b-4986-a05d-7da856efb697",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "8cbaf991-021d-4fab-a854-9e3fe8810ebf",
+      "date": "20151205",
+      "movie_id": "a8034f44-aee4-44cf-b32c-74cf452aaaae",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "b2ed88a7-c822-4c32-9f2e-6d039ee9c350",
+      "date": "20151205",
+      "movie_id": "7daf7208-be4d-4944-a3ae-c1c2f516f3e6",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "9237becf-76de-4019-a7ff-95f75156819a",
+      "date": "20151205",
+      "movie_id": "276c79ec-a26a-40a6-b3d3-fb242a5947b6",
+      "status": "AVAILABLE"
+    },
+    {
+      "id": "d294739d-07fe-45ac-a996-60aebce18015",
+      "date": "20151205",
+      "movie_id": "39ab85e5-5e8e-4dc5-afea-65dc368bd7ab",
+      "status": "AVAILABLE"
     }
   ]
 }

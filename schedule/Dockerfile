@@ -1,19 +1,19 @@
-FROM python
-# can you find a lighter image?
+FROM python:3.12-slim
+# slim image: much lighter than the default python one
 
 WORKDIR /app
 
-# copy the requirements file in the workdir
-RUN
+# copy the requirements file in the workdir (build context is the project root)
+COPY requirements.txt .
 
 # install the Python requirements
-RUN
-
-# grpc compilation of proto files or copy of generated files
-RUN
+RUN pip install --no-cache-dir -r requirements.txt
 
 # copy the app files and directories
-RUN
+COPY schedule/ .
 
-# start movie.py when the container is started
-CMD 
+# public key mounted at /keys by docker-compose (only needed to check tokens)
+ENV JWT_PUBLIC_KEY_PATH=/keys/public_key.pem
+
+# start schedule.py when the container is started
+CMD ["python", "schedule.py"]
