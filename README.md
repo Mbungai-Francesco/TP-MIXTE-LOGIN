@@ -79,8 +79,11 @@ curl -X POST http://localhost:3004/login -H "Content-Type: application/json" \
      -d '{"email": "chris@gmail.com", "password": "root"}'
 ```
 
-et on l'envoie ensuite dans le header `Authorization: Bearer <token>` à chaque requête.
-Le token dure 3 heures.
+et on l'envoie ensuite dans le header `Authorization: Bearer <token>`. Le token dure 3 heures.
+
+Pas besoin de compte pour consulter les films et les séances : Movie et Schedule acceptent
+les lectures sans token, et un visiteur voit la même chose qu'un utilisateur connecté. Le
+token devient obligatoire pour réserver, gérer son compte, ou modifier quoi que ce soit (admin).
 
 Pour Movie et Booking, tout passe par `POST /graphql`, par exemple :
 

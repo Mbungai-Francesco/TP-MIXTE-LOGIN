@@ -58,7 +58,8 @@ def home():
 
 # graphql entry points
 @app.route('/graphql', methods=['POST'])
-@jwt_required()
+# the token is optional: anyone can read the movies, the mutations check the ADMIN role
+@jwt_required(optional=True)
 def graphql_server():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):

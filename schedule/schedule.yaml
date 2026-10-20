@@ -8,7 +8,9 @@
 #   DRAFT     -> being prepared, only visible to admins (default on creation)
 #   AVAILABLE -> open, visible to everyone (only these can be booked)
 #   CANCELED  -> canceled, final (cannot be reopened)
-# A movie is shown at most once per date: (date, movie_id) is unique.
+#   DELETED   -> deleted with DELETE (soft delete), only visible to admins
+# A movie is shown at most once per date: (date, movie_id) is unique among the
+# schedules that are not DELETED (a deleted schedule frees its slot).
 #
 # Calls to other services (the caller's `Authorization` header is forwarded):
 #   Schedule -> Movie (GraphQL `movie_with_id`): checks the movie id when a
@@ -26,9 +28,8 @@
 #                     schedule exists and is AVAILABLE before a booking;
 #                     (REST `GET /schedules`): shows the schedules of the bookings.
 #
-# Security: every endpoint except "/" needs a JWT issued by the User
-# service. Reading is open to every authenticated user; writing is
-# reserved to admins.
+# Security: reading (GET) is public, a visitor without a token sees what a
+# USER sees; writing needs a JWT issued by the User service with the ADMIN role.
 # =====================================================================
 openapi: 3.0.3
 
@@ -39,12 +40,13 @@ info:
     Manages the dates on which the movies are shown.
 
     ## Authentication (JWT)
-    Get a token with `POST /login` on the User service (port 3004), then send it
-    on every request: `Authorization: Bearer <token>`.
+    Reading is public: the `GET` routes work without a token, and a visitor sees what a
+    `USER` sees. Writing needs an ADMIN token: get it with `POST /login` on the User service
+    (port 3004), then send it as `Authorization: Bearer <token>`.
     The token is checked locally with the public key `keys/public_key.pem` (RS256),
     and the role is read from the `role` claim.
 
-    - `401`: the token is missing, invalid or expired.
+    - `401`: the token is missing (on a write route), invalid or expired.
     - `403`: the token is valid, but the operation needs the `ADMIN` role.
 
     ## Status
@@ -53,6 +55,7 @@ info:
     | `DRAFT` | being prepared (default on creation) | ADMIN only |
     | `AVAILABLE` | open for booking | everyone |
     | `CANCELED` | canceled, final | everyone |
+    | `DELETED` | deleted with `DELETE`, final | ADMIN only |
 
 servers:
   - url: http://localhost:3003
@@ -90,11 +93,15 @@ paths:
       summary: List the schedules, with optional filters
       description: |
         Without filter, returns every schedule, sorted by date.
-        A `USER` never sees the `DRAFT` schedules (asking `status=DRAFT` gives a 403).
+        A `USER` never sees the `DRAFT` and `DELETED` schedules (asking for one of these statuses gives a 403).
 
         Used by the Booking service to show the schedules of the bookings,
         and (with `movie_id`) to find the bookings of a movie.
       operationId: getSchedules
+      # public: the token is optional
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: date
           in: query
@@ -184,6 +191,10 @@ paths:
         (`all_movies`). `movie` is `null` when the movie does not exist, or when
         it is `DELETED` and the caller is not an admin.
       operationId: getSchedulesDetails
+      # public: the token is optional
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: date
           in: query
@@ -221,6 +232,10 @@ paths:
       tags: [user]
       summary: "[Schedule -> Movie] Get a schedule with the details of its movie"
       operationId: getScheduleDetails
+      # public: the token is optional
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/ScheduleId"
       responses:
@@ -281,8 +296,12 @@ paths:
     get:
       tags: [user]
       summary: Get a schedule by id
-      description: A `DRAFT` schedule is reported as not found to a `USER`.
+      description: A `DRAFT` or `DELETED` schedule is reported as not found to a `USER`.
       operationId: getSchedule
+      # public: the token is optional
+      security:
+        - {}
+        - bearerAuth: []
       responses:
         "200":
           description: Schedule found
@@ -297,8 +316,11 @@ paths:
 
     delete:
       tags: [admin]
-      summary: Delete a schedule
-      description: Its bookings become CANCELED on the Booking service first.
+      summary: Delete a schedule (soft delete)
+      description: |
+        The schedule gets the `DELETED` status and stays in the database; its bookings become
+        CANCELED on the Booking service first. Deleting an already deleted schedule gives a 404.
+        The same movie can then be scheduled again on the same date.
       operationId: deleteSchedule
       responses:
         "200":
@@ -323,7 +345,8 @@ paths:
       tags: [admin]
       summary: Change the status of a schedule
       description: |
-        `CANCELED` is final: a canceled schedule cannot be reopened.
+        `CANCELED` is final: a canceled schedule cannot be reopened. A `DELETED` schedule cannot change status
+        either, and `DELETED` cannot be set here (use `DELETE`).
         When a schedule becomes `CANCELED`, its bookings become CANCELED on the Booking service first.
       operationId: updateScheduleStatus
       parameters:
@@ -349,13 +372,18 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The schedule is canceled
+          description: The schedule is canceled or deleted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-              example:
-                error: a canceled schedule cannot be reopened
+              examples:
+                canceled:
+                  value:
+                    error: a canceled schedule cannot be reopened
+                deleted:
+                  value:
+                    error: schedule is deleted
         "502":
           $ref: "#/components/responses/BookingUnavailable"
 
@@ -465,7 +493,9 @@ components:
           type: string
           example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
         status:
-          $ref: "#/components/schemas/Status"
+          type: string
+          enum: [DRAFT, AVAILABLE, CANCELED, DELETED]
+          example: AVAILABLE
 
     # Movie as returned by the Movie service (GraphQL)
     Movie:

@@ -31,18 +31,20 @@ info:
     Only the requested fields are returned.
 
     ## Authentication (JWT)
-    Get a token with `POST /login` on the User service (port 3004), then send it
-    on every request: `Authorization: Bearer <token>`.
+    The queries are public: no token is needed to read the movies. A visitor without
+    a token sees the same thing as a `USER`.
+    The mutations need an ADMIN token: get it with `POST /login` on the User service
+    (port 3004), then send it as `Authorization: Bearer <token>`.
     The token is checked locally with the public key `keys/public_key.pem` (RS256),
-    and the role is read from the `role` claim.
+    and the role is read from the `role` claim. An invalid or expired token is always refused.
 
     ## Operations
     | Operation | Type | Who | Result |
     |---|---|---|---|
-    | `movie_with_id(_id)` | query | authenticated | `Movie` or `null` |
-    | `movie_with_title(_title)` | query | authenticated | `Movie` or `null` |
-    | `all_movies` | query | authenticated | `[Movie]` |
-    | `actor_with_id(_id)` | query | authenticated | `[Actor]`, one row per movie |
+    | `movie_with_id(_id)` | query | anyone | `Movie` or `null` |
+    | `movie_with_title(_title)` | query | anyone | `Movie` or `null` |
+    | `all_movies` | query | anyone | `[Movie]` |
+    | `actor_with_id(_id)` | query | anyone | `[Actor]`, one row per movie |
     | `add_movie(_id, _title, _director, _rate)` | mutation | ADMIN | the new `Movie` (AVAILABLE) |
     | `update_movie_rate(_id, _rate)` | mutation | ADMIN | the updated `Movie`, `null` if unknown |
     | `delete_movie(_id)` | mutation | ADMIN | the `Movie` with the DELETED status, `null` if unknown |
@@ -50,7 +52,7 @@ info:
     A `USER` never sees the DELETED movies (the queries return `null` or skip them).
 
     ## Errors
-    - `401` (HTTP): the token is missing, invalid or expired.
+    - `401` (HTTP): the token is invalid or expired (no token at all is accepted).
     - Other errors are GraphQL errors: HTTP `200` with an `errors` list, for example
       `forbidden: ADMIN role required`, `movie already exists: <id>`,
       `movie is deleted: <id>`, `Schedule service unavailable: the movie was not deleted`.
@@ -60,7 +62,9 @@ servers:
   - url: http://localhost:3200
     description: Local development server
 
+# The token is optional (queries are public, mutations check the ADMIN role)
 security:
+  - {}
   - bearerAuth: []
 
 paths:
@@ -152,7 +156,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/GraphQLResponse"
         "401":
-          description: The JWT is missing, invalid or expired
+          description: The JWT is invalid or expired
           content:
             application/json:
               schema:
