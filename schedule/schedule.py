@@ -113,8 +113,9 @@ def home():
     return make_response("<h1 style='color:blue'>Welcome to the Showtime service!</h1>", 200)
 
 
+# reading is public: without a token, the caller sees what a USER sees
 @app.route("/schedules", methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_schedules():
     result = visible_schedules()
     if result is None:
@@ -124,7 +125,7 @@ def get_schedules():
 
 # Schedule -> Movie: same list, each schedule with the details of its movie
 @app.route("/schedules/details", methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_schedules_details():
     result = visible_schedules()
     if result is None:
@@ -136,7 +137,7 @@ def get_schedules_details():
 
 
 @app.route("/schedules/<scheduleid>", methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_schedule(scheduleid):
     schedule = find_schedule(scheduleid)
     if not schedule or (schedule["status"] in HIDDEN and not is_admin()):
@@ -145,7 +146,7 @@ def get_schedule(scheduleid):
 
 
 @app.route("/schedules/<scheduleid>/details", methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_schedule_details(scheduleid):
     schedule = find_schedule(scheduleid)
     if not schedule or (schedule["status"] in HIDDEN and not is_admin()):
