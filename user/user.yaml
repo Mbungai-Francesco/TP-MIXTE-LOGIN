@@ -7,25 +7,31 @@ info:
     Manages the users of the cinema and issues JWT tokens.
 
     ## Authentication (JWT)
-    1. Call `POST /login` with an id and a password.
-    2. You get a JWT signed with HS256 using the `JWT_SECRET` shared by all services.
+    1. Call `POST /login` with an email and a password.
+    2. You get a JWT signed with RS256 by the private key of the User service
+       (`keys/private_key.pem`). The other services check it with `keys/public_key.pem`.
     3. Send it on every protected request: `Authorization: Bearer <token>`.
 
     Token payload:
     ```json
-    { "sub": "chris_rivers", "role": "user", "iat": 1700000000, "exp": 1700003600 }
+    { "sub": "chris_rivers", "role": "ADMIN", "iat": 1700000000, "exp": 1700010800 }
     ```
 
-    - `401`: the token is missing, invalid or expired.
+    - `401`: the token is missing, invalid or expired, or its account has been deleted
+      (the token of a deleted account is refused at once, even before it expires).
     - `403`: the token is valid, but the role is not allowed, or a user is
       trying to access another user's account.
 
-    Roles: **user** manages only their own account. **admin** manages every account.
+    Roles: **USER** manages only their own account. **ADMIN** manages every account.
+
+    Status: **ACTIVE**, or **DELETED** once the account is deleted (soft delete). A deleted
+    account cannot log in, is only visible to admins, and keeps its id and email: they
+    cannot be used for a new account.
   contact:
     name: Mbungai Francesco
 
 servers:
-  - url: http://localhost:3203
+  - url: http://localhost:3004
     description: Local development server
 
 tags:
@@ -62,9 +68,9 @@ paths:
     post:
       tags: [auth]
       summary: Log in and get a JWT
-      description: Checks the credentials and returns a signed access token.
+      description: Checks the credentials, updates `last_active` and returns a signed access token.
       operationId: login
-      security: []  
+      security: []
       requestBody:
         required: true
         content:
@@ -72,8 +78,8 @@ paths:
             schema:
               $ref: "#/components/schemas/LoginRequest"
             example:
-              id: chris_rivers
-              password: "secret123"
+              email: chris@gmail.com
+              password: "root"
       responses:
         "200":
           description: Authentication succeeded
@@ -116,8 +122,9 @@ paths:
       tags: [auth, admin]
       summary: Register a new user
       description: |
-        Public endpoint used to sign up. The new user always gets the `user` role.
-        Only an authenticated admin can create a user with the `admin` role.
+        Public endpoint used to sign up. The new user gets the `USER` role by default.
+        Only an authenticated admin can create a user with the `ADMIN` role.
+        The `id` and the `email` must both be unique.
       operationId: createUser
       # Token is optional: `{}` = anonymous, `bearerAuth` = logged in (needed to create an admin)
       security:
@@ -131,6 +138,7 @@ paths:
               $ref: "#/components/schemas/UserCreate"
             example:
               id: john_doe
+              email: john@gmail.com
               name: John Doe
               password: "secret123"
       responses:
@@ -167,8 +175,11 @@ paths:
       - $ref: "#/components/parameters/UserId"
 
     get:
-      tags: [admin]
-      summary: Get a user by id
+      tags: [user, admin]
+      summary: Get a user by id (owner or admin)
+      description: |
+        An admin also gets the DELETED accounts, with their status.
+        Used by the Booking service (with the caller's token) to check that the account is ACTIVE before a booking.
       operationId: getUser
       responses:
         "200":
@@ -187,7 +198,7 @@ paths:
     put:
       tags: [user]
       summary: Update a user (owner or admin)
-      description: A user can change their own name and password. Only an admin can change `role`.
+      description: A user can change their own name, email and password. Only an admin can change `role`.
       operationId: updateUser
       requestBody:
         required: true
@@ -212,11 +223,29 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The email is used by another account, or the account is deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                email:
+                  value:
+                    error: email already used
+                deleted:
+                  value:
+                    error: user is deleted
 
     delete:
       tags: [user]
       summary: Delete a user (owner or admin)
-      description: The bookings of the user can then be removed with `DELETE /bookings/{userid}` on the Booking service.
+      description: |
+        Soft delete: the account gets the DELETED status and stays in the database.
+        Deleting an already deleted account gives a 404.
+        Before the account is deleted, its bookings become CANCELED on the Booking service
+        (GraphQL mutation `cancel_user_bookings`, called with the caller's token).
+        If the Booking service is down, the account is not deleted (502).
       operationId: deleteUser
       responses:
         "200":
@@ -233,6 +262,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "502":
+          description: The Booking service is down, the account was not deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: Booking service unavailable
 
 components:
   securitySchemes:
@@ -291,7 +328,7 @@ components:
           example:
             error: user not found
     Conflict:
-      description: A user with this id already exists
+      description: A user with this id or email already exists
       content:
         application/json:
           schema:
@@ -324,34 +361,38 @@ components:
         password:
           type: string
           format: password
-          example: secret123
+          example: root
     TokenResponse:
       type: object
       required: [access_token, token_type, expires_in]
       properties:
         access_token:
           type: string
-          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaHJpc19yaXZlcnMiLCJyb2xlIjoiY2xpZW50IiwiZXhwIjoxNzAwMDAzNjAwfQ.signature
+          example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjaHJpc19yaXZlcnMiLCJyb2xlIjoiQURNSU4ifQ.signature
         token_type:
           type: string
           example: Bearer
         expires_in:
           type: integer
           description: Lifetime of the token in seconds
-          example: 3600
+          example: 10800
 
     Role:
       type: string
-      enum: [user, admin]
-      example: user
+      enum: [USER, ADMIN]
+      example: USER
 
     User:
       type: object
-      required: [id, name, role]
+      required: [id, email, name, role]
       properties:
         id:
           type: string
           example: chris_rivers
+        email:
+          type: string
+          format: email
+          example: chris@gmail.com
         name:
           type: string
           example: Chris Rivers
@@ -362,15 +403,23 @@ components:
           format: int64
           description: Unix timestamp of the last login
           example: 1360031010
+        status:
+          type: string
+          enum: [ACTIVE, DELETED]
+          example: ACTIVE
 
     UserCreate:
       type: object
-      required: [id, name, password]
+      required: [id, email, name, password]
       properties:
         id:
           type: string
           pattern: '^[a-z0-9_]{3,32}$'
           example: john_doe
+        email:
+          type: string
+          format: email
+          example: john@gmail.com
         name:
           type: string
           example: John Doe
@@ -391,6 +440,9 @@ components:
       properties:
         name:
           type: string
+        email:
+          type: string
+          format: email
         password:
           type: string
           format: password

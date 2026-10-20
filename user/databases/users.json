@@ -3,58 +3,65 @@
     {
       "id": "chris_rivers",
       "email": "chris@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$VS2mw3Jzs3AM4Szc$6d62e0bf50fcc0c54f9d2679f9efad148e29bbe4da0262a7767538b8e7bab8a2444aae08fe3ba20b66e1249f7c22ad754bdd409939d528e27b7802c6f2f962aa",
       "role": "ADMIN",
       "name": "Chris Rivers",
-      "last_active": 1360031010
+      "last_active": 1360031010,
+      "status": "ACTIVE"
     },
     {
       "id": "peter_curley",
       "email": "peter@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$hnPLj9nlOreJiCp9$d602ea5688e45106647a348091a978f9f1485468e93fec3352bb552deca6b522e12880eec87dc9c97ceda91f8faa906207483767860bcbc7061295d2071e3c62",
       "role": "USER",
       "name": "Peter Curley",
-      "last_active": 1360031222
+      "last_active": 1360031222,
+      "status": "ACTIVE"
     },
     {
       "id": "garret_heaton",
       "email": "garret@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$ZWikai1uMXmEzdFu$1b8f75fbe325c9fa4d67b267124d527447ecf83e47589a9484e60dc1103df244594b2d60da48335bbe4797958cff462312b8270301c94e534962ca6e5a051a82",
       "role": "USER",
       "name": "Garret Heaton",
-      "last_active": 1360031425
+      "last_active": 1360031425,
+      "status": "ACTIVE"
     },
     {
       "id": "michael_scott",
       "email": "micheal@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$qASMOYMabb0uZfqb$9699f38cf2b71ad2f2af6022d6c0b4254eebae182fe0d45d8e4becc64f4a0f0a9df92db705cb7fe1ff61a8bde438ffc025783b003b335abc5c3ddeb4820bbd6b",
       "role": "USER",
       "name": "Michael Scott",
-      "last_active": 1360031625
+      "last_active": 1360031625,
+      "status": "ACTIVE"
     },
     {
       "id": "jim_halpert",
       "email": "halpert@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$CjOAZ2iIEXLmOkSo$7ae3affd9dfb677493f39cca66014ac6d44233da096cd9cbe6fa5649d499c21982bbcd91c160cea3de4570aeff285c46b304ae52c3c0603b30b3f1c28084960a",
       "role": "USER",
       "name": "Jim Halpert",
-      "last_active": 1360031325
+      "last_active": 1360031325,
+      "status": "ACTIVE"
     },
     {
       "id": "pam_beesly",
       "email": "beesly@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$j3zMbMPIbRadQHeQ$0a656a1659cea8de6620ebe9b914e80e5ef458e94c5d8a49612cb7a4286b63277e85468ab3fdcf024447a9bfda415cd032ba9243253d27933d8f358bfe958691",
       "role": "USER",
       "name": "Pam Beesly",
-      "last_active": 1360031225
+      "last_active": 1360031225,
+      "status": "ACTIVE"
     },
     {
       "id": "dwight_schrute",
       "email": "dwight@gmail.com",
-      "password": "root",
+      "password": "scrypt:32768:8:1$35MtqwOWd42xisKo$33b3e63fc951c3947b47965da940d23ffc9b954977178cda956e7e4cf3c674e40a1bb257040ca81c8a3b2511567e69f949cb7c561016e3a562a62a2ecdea784a",
       "role": "USER",
       "name": "Dwight Schrute",
-      "last_active": 1360031202
+      "last_active": 1360031202,
+      "status": "ACTIVE"
     }
   ]
 }

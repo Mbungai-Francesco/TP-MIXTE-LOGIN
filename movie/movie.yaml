@@ -1,0 +1,255 @@
+# =====================================================================
+# Movie service - OpenAPI documentation of the GraphQL API
+# ---------------------------------------------------------------------
+# Port: 3200
+# Database: MongoDB, collections `movies` (seeded from data/movies.json)
+#           and `actors` (seeded from data/actors.json)
+# GraphQL schema: movie.graphql (the full list of types and fields)
+#
+# A movie uses its UUID as Mongo _id (exposed as `id`), and has a status:
+#   AVAILABLE -> visible to everyone
+#   DELETED   -> soft deleted, only visible to admins
+# An actor has one row per movie they play in (`film` = movie id).
+#
+# Calls to other services (the caller's `Authorization` header is forwarded):
+#   Movie -> Schedule (REST `PUT /schedules/movies/{movieid}/cancel`): before a
+#            movie gets the DELETED status, its schedules (and their bookings)
+#            become CANCELED. If Schedule is down, the movie is not changed.
+#
+# Calls from other services:
+#   Schedule -> Movie (`movie_with_id`, `all_movies`)
+#   Booking  -> Movie (`all_movies`)
+# =====================================================================
+openapi: 3.0.3
+
+info:
+  title: Movie Service API (GraphQL)
+  version: "2.0.0"
+  description: |
+    Movies and their actors, exposed as a **GraphQL** API on a single endpoint:
+    `POST /graphql` with a JSON body `{"query": "...", "variables": {...}}`.
+    Only the requested fields are returned.
+
+    ## Authentication (JWT)
+    Get a token with `POST /login` on the User service (port 3004), then send it
+    on every request: `Authorization: Bearer <token>`.
+    The token is checked locally with the public key `keys/public_key.pem` (RS256),
+    and the role is read from the `role` claim.
+
+    ## Operations
+    | Operation | Type | Who | Result |
+    |---|---|---|---|
+    | `movie_with_id(_id)` | query | authenticated | `Movie` or `null` |
+    | `movie_with_title(_title)` | query | authenticated | `Movie` or `null` |
+    | `all_movies` | query | authenticated | `[Movie]` |
+    | `actor_with_id(_id)` | query | authenticated | `[Actor]`, one row per movie |
+    | `add_movie(_id, _title, _director, _rate)` | mutation | ADMIN | the new `Movie` (AVAILABLE) |
+    | `update_movie_rate(_id, _rate)` | mutation | ADMIN | the updated `Movie`, `null` if unknown |
+    | `delete_movie(_id)` | mutation | ADMIN | the `Movie` with the DELETED status, `null` if unknown |
+
+    A `USER` never sees the DELETED movies (the queries return `null` or skip them).
+
+    ## Errors
+    - `401` (HTTP): the token is missing, invalid or expired.
+    - Other errors are GraphQL errors: HTTP `200` with an `errors` list, for example
+      `forbidden: ADMIN role required`, `movie already exists: <id>`,
+      `movie is deleted: <id>`, `Schedule service unavailable: the movie was not deleted`.
+    - HTTP `400`: the query itself is invalid (unknown field, missing argument...).
+
+servers:
+  - url: http://localhost:3200
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /:
+    get:
+      summary: Service home page
+      operationId: home
+      security: []
+      responses:
+        "200":
+          description: HTML welcome message
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<h1 style='color:blue'>Welcome to the Movie service!</h1>"
+
+  /graphql:
+    post:
+      summary: Run a GraphQL query or mutation
+      operationId: graphql
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraphQLRequest"
+            examples:
+              movie_with_id:
+                summary: A movie with its actors
+                value:
+                  query: '{ movie_with_id(_id: "a8034f44-aee4-44cf-b32c-74cf452aaaae") { id title rating status actors { firstname lastname } } }'
+              movie_with_title:
+                summary: A movie by its title
+                value:
+                  query: '{ movie_with_title(_title: "Creed") { id director rating } }'
+              all_movies:
+                summary: Every movie
+                value:
+                  query: '{ all_movies { id title rating } }'
+              actor_with_id:
+                summary: An actor, one row per movie
+                value:
+                  query: '{ actor_with_id(_id: "actor1") { firstname lastname film } }'
+              add_movie:
+                summary: "[ADMIN] Add a movie"
+                value:
+                  query: 'mutation { add_movie(_id: "11111111-2222-3333-4444-555555555555", _title: "Dune", _director: "Denis Villeneuve", _rate: 8.0) { id title status } }'
+              update_movie_rate:
+                summary: "[ADMIN] Change the rating of a movie"
+                value:
+                  query: 'mutation { update_movie_rate(_id: "a8034f44-aee4-44cf-b32c-74cf452aaaae", _rate: 8.4) { title rating } }'
+              delete_movie:
+                summary: "[ADMIN] Soft delete a movie (its schedules and bookings are canceled)"
+                value:
+                  query: 'mutation { delete_movie(_id: "a8034f44-aee4-44cf-b32c-74cf452aaaae") { title status } }'
+              with_variables:
+                summary: A query with variables
+                value:
+                  query: 'query($id: String!) { movie_with_id(_id: $id) { title } }'
+                  variables:
+                    id: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+      responses:
+        "200":
+          description: Result of the operation (may contain GraphQL `errors`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      movie_with_title:
+                        id: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+                        director: Ryan Coogler
+                        rating: 8.8
+                forbidden:
+                  value:
+                    data:
+                      update_movie_rate: null
+                    errors:
+                      - message: "forbidden: ADMIN role required"
+                        path: [update_movie_rate]
+        "400":
+          description: Invalid GraphQL query (unknown field, missing argument...)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLResponse"
+        "401":
+          description: The JWT is missing, invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: token is missing or invalid
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT from `POST /login` on the User service. Header: `Authorization: Bearer <token>`"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    GraphQLRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          description: GraphQL query or mutation
+        variables:
+          type: object
+          additionalProperties: true
+          description: Values of the `$variables` used in the query
+
+    GraphQLResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: One entry per requested operation, with only the requested fields
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              message:
+                type: string
+              path:
+                type: array
+                items:
+                  type: string
+
+    # GraphQL types (see movie.graphql)
+    Movie:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+        title:
+          type: string
+          example: Creed
+        director:
+          type: string
+          example: Ryan Coogler
+        rating:
+          type: number
+          format: float
+          example: 8.8
+        status:
+          type: string
+          enum: [AVAILABLE, DELETED]
+        actors:
+          type: array
+          items:
+            $ref: "#/components/schemas/Actor"
+
+    Actor:
+      type: object
+      description: One row per movie the actor plays in
+      properties:
+        id:
+          type: string
+          example: actor1
+        firstname:
+          type: string
+          example: Leonardo
+        lastname:
+          type: string
+          example: DiCaprio
+        birthyear:
+          type: integer
+          example: 1974
+        film:
+          type: string
+          description: Movie id
+          example: a8034f44-aee4-44cf-b32c-74cf452aaaae

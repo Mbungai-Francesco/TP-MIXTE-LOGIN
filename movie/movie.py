@@ -1,44 +1,55 @@
 from ariadne import graphql_sync, make_executable_schema, load_schema_from_path, ObjectType, QueryType, MutationType
 from flask import Flask, request, jsonify, make_response
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, jwt_required
 
-import requests
+import resolvers as r
 from config import Config
+from db import init_db
 
-PORT = 3001
+PORT = 3200
 HOST = '0.0.0.0'
-USER_PORT = 3004
-TIMEOUT = 90
 app = Flask(__name__)
 
 app.config.from_object(Config)
 
+# tokens are issued by the User service; the role is read from the token itself
 jwt = JWTManager(app)
 
-@jwt.user_lookup_loader
-def user_lookup_callback(_jwt_header, jwt_data):
-    user_id = jwt_data["sub"]
-    token = request.headers.get("Authorization")
+def error(message, code):
+    return make_response(jsonify({"error": message}), code)
 
-    headers = {
-        "Authorization": token,
-        "Accept": "application/json",
-    }
+@jwt.unauthorized_loader
+def missing_token_callback(reason):
+    return error("token is missing or invalid", 401)
 
-    url = f"http://{HOST}:{USER_PORT}/users/{user_id}"
-    res = requests.get(
-        url,
-        headers=headers,
-        timeout=TIMEOUT,
-    )
+@jwt.invalid_token_loader
+def invalid_token_callback(reason):
+    return error("token is missing or invalid", 401)
 
-    res.raise_for_status()
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return error("token has expired", 401)
 
-    user = res.json()
+# elements for Ariadne
+type_defs = load_schema_from_path('movie.graphql')
+query = QueryType()
+mutation = MutationType()
+movie = ObjectType('Movie')
+actor = ObjectType('Actor')
 
-    return user
+query.set_field('movie_with_id', r.movie_with_id)
+query.set_field('movie_with_title', r.movie_with_title)
+query.set_field('all_movies', r.all_movies)
+query.set_field('actor_with_id', r.actor_with_id)
 
-# todo create elements for Ariadne
+mutation.set_field('add_movie', r.add_movie)
+mutation.set_field('update_movie_rate', r.update_movie_rate)
+mutation.set_field('delete_movie', r.delete_movie)
+
+movie.set_field('id', r.resolve_movie_id)
+movie.set_field('actors', r.resolve_actors_in_movie)
+
+schema = make_executable_schema(type_defs, query, mutation, movie, actor)
 
 # root message
 @app.route("/", methods=['GET'])
@@ -47,9 +58,21 @@ def home():
 
 # graphql entry points
 @app.route('/graphql', methods=['POST'])
+@jwt_required()
 def graphql_server():
-    # todo to complete
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error("the body must be a JSON object: {\"query\": \"...\"}", 400)
+    success, result = graphql_sync(
+        schema,
+        data,
+        context_value={"request": request},
+        debug=app.debug
+    )
+    status_code = 200 if success else 400
+    return jsonify(result), status_code
 
 if __name__ == "__main__":
+    init_db()
     print("Server running in port %s"%(PORT))
     app.run(host=HOST, port=PORT)

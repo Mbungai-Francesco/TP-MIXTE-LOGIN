@@ -1,3 +1,36 @@
 type Query {
     movie_with_id(_id: String!): Movie
+    movie_with_title(_title: String!): Movie
+    all_movies: [Movie]
+    actor_with_id(_id: String!): [Actor]
+}
+
+type Mutation {
+    add_movie(_id: String!, _title: String!, _director: String!, _rate: Float!): Movie
+    update_movie_rate(_id: String!, _rate: Float!): Movie
+    delete_movie(_id: String!): Movie
+}
+
+# a deleted movie is kept in the database with the DELETED status
+enum MovieStatus {
+    AVAILABLE
+    DELETED
+}
+
+type Movie {
+    id: String!
+    title: String!
+    director: String!
+    rating: Float!
+    status: MovieStatus!
+    actors: [Actor]
+}
+
+# one Actor per film: an actor playing in 2 movies has 2 rows
+type Actor {
+    id: String!
+    firstname: String!
+    lastname: String!
+    birthyear: Int!
+    film: String!
 }
