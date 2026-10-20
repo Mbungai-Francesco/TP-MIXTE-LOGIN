@@ -1,0 +1,45 @@
+type Query {
+    my_bookings: [Booking]
+    bookings_for_user(_userid: String!): [Booking]
+    all_bookings: [Booking]
+    bookings_for_schedule(_schedule_id: String!): [Booking]
+    bookings_for_movie(_movie_id: String!): [Booking]
+}
+
+type Mutation {
+    add_booking(_schedule_id: String!, _userid: String): Booking
+    cancel_booking(_schedule_id: String!, _userid: String): Booking
+    cancel_schedules_bookings(_schedule_ids: [String!]!): Int
+    cancel_user_bookings(_userid: String!): Int
+}
+
+enum BookingStatus {
+    CONFIRMED
+    CANCELED
+}
+
+# a booking is identified by (userid, schedule_id)
+type Booking {
+    userid: String!
+    schedule_id: String!
+    status: BookingStatus!
+    schedule: Schedule
+}
+
+# from the Schedule service (REST)
+type Schedule {
+    id: String!
+    date: String!
+    movie_id: String!
+    status: String!
+    movie: Movie
+}
+
+# from the Movie service (GraphQL)
+type Movie {
+    id: String!
+    title: String!
+    director: String!
+    rating: Float!
+    status: String!
+}

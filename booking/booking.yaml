@@ -1,31 +1,78 @@
+# =====================================================================
+# Booking service - OpenAPI documentation of the GraphQL API
+# ---------------------------------------------------------------------
+# Port: 3002
+# Database: MongoDB, collection `bookings` (seeded from data/bookings.json)
+# GraphQL schema: booking.graphql (the full list of types and fields)
+#
+# A booking = { userid, schedule_id, status }, identified by (userid, schedule_id).
+#   CONFIRMED -> the user will attend the schedule
+#   CANCELED  -> canceled by the user, or because the schedule, the movie or
+#                the user account was canceled/deleted (it stays in the database)
+#
+# Calls to other services (the caller's `Authorization` header is forwarded):
+#   Booking -> Schedule (REST `GET /schedules/{scheduleid}`): the schedule must
+#              exist and be AVAILABLE before a booking.
+#   Booking -> Schedule (REST `GET /schedules`): the `schedule` field of the
+#              bookings, and the schedules of a movie (`bookings_for_movie`).
+#   Booking -> Movie (GraphQL `all_movies`): the `schedule.movie` field.
+#   Booking -> User (REST `GET /users/{userid}`): before every booking, the
+#              account must be ACTIVE (also for the caller: the token of a
+#              deleted account is still signed and not expired).
+#   Schedule and Movie are called once per GraphQL request, whatever the
+#   number of bookings.
+#
+# Calls from other services:
+#   Schedule -> Booking (`cancel_schedules_bookings`): a schedule is canceled
+#               or deleted (also when its movie is deleted).
+#   User     -> Booking (`cancel_user_bookings`): a user account is deleted.
+# =====================================================================
 openapi: 3.0.3
 
 info:
-  title: Booking Service API
-  version: "1.0.0"
+  title: Booking Service API (GraphQL)
+  version: "2.0.0"
   description: |
-    Manages the bookings of the users.
+    The bookings of the users, exposed as a **GraphQL** API on a single endpoint:
+    `POST /graphql` with a JSON body `{"query": "...", "variables": {...}}`.
+    Only the requested fields are returned.
 
     ## Authentication (JWT)
-    Get a token with `POST /login` on the User service (port 3203), then send it
+    Get a token with `POST /login` on the User service (port 3004), then send it
     on every request: `Authorization: Bearer <token>`.
-    The token is checked locally with the shared secret `JWT_SECRET`.
+    The token is checked locally with the public key `keys/public_key.pem` (RS256);
+    the user id is read from the `sub` claim and the role from the `role` claim.
 
-    - `401`: the token is missing, invalid or expired.
-    - `403`: the token is valid, but the operation needs the `admin` role, or a
-      client is trying to access another user's bookings.
-  contact:
-    name: Mbungai Francesco
+    ## Operations
+    | Operation | Type | Who | Result |
+    |---|---|---|---|
+    | `my_bookings` | query | authenticated | the bookings of the caller |
+    | `bookings_for_user(_userid)` | query | owner or ADMIN | `[Booking]` |
+    | `all_bookings` | query | ADMIN | `[Booking]` |
+    | `bookings_for_schedule(_schedule_id)` | query | ADMIN | `[Booking]` |
+    | `bookings_for_movie(_movie_id)` | query | ADMIN | `[Booking]`, every schedule of the movie |
+    | `add_booking(_schedule_id, _userid?)` | mutation | owner or ADMIN | the `Booking` (CONFIRMED) |
+    | `cancel_booking(_schedule_id, _userid?)` | mutation | owner or ADMIN | the `Booking` (CANCELED) |
+    | `cancel_schedules_bookings(_schedule_ids)` | mutation | ADMIN (Schedule service) | number of canceled bookings |
+    | `cancel_user_bookings(_userid)` | mutation | owner or ADMIN (User service) | number of canceled bookings |
+
+    Without `_userid`, `add_booking` and `cancel_booking` work on the caller's own bookings.
+    Only an ADMIN can give the `_userid` of another user.
+    Booking a CANCELED booking again makes it CONFIRMED again.
+    A DELETED account cannot book (`user not found`), even with a token that has not expired.
+
+    ## Errors
+    - `401` (HTTP): the token is missing, invalid or expired.
+    - Other errors are GraphQL errors: HTTP `200` with an `errors` list, for example
+      `forbidden: not your bookings`, `forbidden: ADMIN role required`,
+      `schedule not found: <id>`, `schedule is not open for booking: <status>`,
+      `booking already exists`, `booking not found`, `user not found: <id>`,
+      `Schedule service unavailable`, `Movie service unavailable`, `User service unavailable`.
+    - HTTP `400`: the query itself is invalid (unknown field, missing argument...).
 
 servers:
-  - url: http://localhost:3201
+  - url: http://localhost:3002
     description: Local development server
-
-tags:
-  - name: client
-    description: Operations on the caller's own bookings (or any user's, for an admin)
-  - name: admin
-    description: Secured admin-only calls
 
 security:
   - bearerAuth: []
@@ -33,7 +80,6 @@ security:
 paths:
   /:
     get:
-      tags: [client]
       summary: Service home page
       operationId: home
       security: []
@@ -46,270 +92,108 @@ paths:
                 type: string
                 example: "<h1 style='color:blue'>Welcome to the Booking service!</h1>"
 
-  /bookings:
-    get:
-      tags: [admin]
-      summary: Get the bookings of all users
-      operationId: getAllBookings
-      responses:
-        "200":
-          description: All bookings
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/UserBookings"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
-  /bookings/{userid}:
-    parameters:
-      - $ref: "#/components/parameters/UserId"
-
-    get:
-      tags: [client]
-      summary: Get the bookings of a user (owner or admin)
-      operationId: getUserBookings
-      responses:
-        "200":
-          description: Bookings of the user (`dates` is empty when there are none)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserBookings"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
+  /graphql:
     post:
-      tags: [client]
-      summary: Book a movie on a date (owner or admin)
-      description: |
-        Steps:
-        1. Check the slot with the Schedule service:
-           `GET /schedules/{date}/movies/{movieid}` (200 = OK, 404 = no such slot).
-        2. Refuse the booking if the user already booked this movie on this date.
-        3. Add the movie to the user's date (the date and the user entry are
-           created when they don't exist yet) and save bookings.json.
-      operationId: createBooking
+      summary: Run a GraphQL query or mutation
+      operationId: graphql
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BookingRequest"
-            example:
-              date: "20151201"
-              movieid: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+              $ref: "#/components/schemas/GraphQLRequest"
+            examples:
+              my_bookings:
+                summary: My bookings, with the schedule and the movie
+                value:
+                  query: '{ my_bookings { schedule_id status schedule { date status movie { title rating } } } }'
+              bookings_for_user:
+                summary: The bookings of a user (owner or ADMIN)
+                value:
+                  query: '{ bookings_for_user(_userid: "garret_heaton") { schedule_id status } }'
+              all_bookings:
+                summary: "[ADMIN] Every booking"
+                value:
+                  query: '{ all_bookings { userid schedule_id status } }'
+              bookings_for_schedule:
+                summary: "[ADMIN] The bookings of a schedule"
+                value:
+                  query: '{ bookings_for_schedule(_schedule_id: "2c064f12-5368-4c94-a1ce-77f6f2f7f86f") { userid status } }'
+              bookings_for_movie:
+                summary: "[ADMIN] The bookings of a movie, on every date"
+                value:
+                  query: '{ bookings_for_movie(_movie_id: "267eedb8-0f5d-42d5-8f43-72426b9fb3e6") { userid status schedule { date } } }'
+              add_booking:
+                summary: Book a schedule for myself
+                value:
+                  query: 'mutation { add_booking(_schedule_id: "2c064f12-5368-4c94-a1ce-77f6f2f7f86f") { userid status schedule { date movie { title } } } }'
+              add_booking_for_user:
+                summary: "[ADMIN] Book a schedule for another user"
+                value:
+                  query: 'mutation { add_booking(_schedule_id: "2c064f12-5368-4c94-a1ce-77f6f2f7f86f", _userid: "peter_curley") { userid status } }'
+              cancel_booking:
+                summary: Cancel one of my bookings
+                value:
+                  query: 'mutation { cancel_booking(_schedule_id: "2c064f12-5368-4c94-a1ce-77f6f2f7f86f") { status } }'
+              cancel_schedules_bookings:
+                summary: "[ADMIN] Cancel the bookings of schedules (used by Schedule)"
+                value:
+                  query: 'mutation($ids: [String!]!) { cancel_schedules_bookings(_schedule_ids: $ids) }'
+                  variables:
+                    ids: [2c064f12-5368-4c94-a1ce-77f6f2f7f86f]
+              cancel_user_bookings:
+                summary: Cancel every booking of a user (used by User)
+                value:
+                  query: 'mutation { cancel_user_bookings(_userid: "peter_curley") }'
       responses:
-        "201":
-          description: Booking created. Returns the updated bookings of the user.
+        "200":
+          description: Result of the operation (may contain GraphQL `errors`)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserBookings"
+                $ref: "#/components/schemas/GraphQLResponse"
+              examples:
+                success:
+                  value:
+                    data:
+                      my_bookings:
+                        - schedule_id: 2c064f12-5368-4c94-a1ce-77f6f2f7f86f
+                          status: CONFIRMED
+                          schedule:
+                            date: "20151201"
+                            status: AVAILABLE
+                            movie:
+                              title: Creed
+                              rating: 8.8
+                not_open:
+                  value:
+                    data:
+                      add_booking: null
+                    errors:
+                      - message: "schedule is not open for booking: CANCELED"
+                        path: [add_booking]
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Invalid GraphQL query (unknown field, missing argument...)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphQLResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "409":
-          description: The user already booked this movie on this date
+          description: The JWT is missing, invalid or expired
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
               example:
-                error: booking already exists
-        "422":
-          description: The movie is not shown on this date (the Schedule service returned 404)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                error: this movie is not scheduled on 20151201
-        "502":
-          $ref: "#/components/responses/BadGateway"
-
-    delete:
-      tags: [admin]
-      summary: Delete all the bookings of a user
-      description: Useful when a user account is deleted on the User service.
-      operationId: deleteUserBookings
-      responses:
-        "200":
-          description: Bookings deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Message"
-              example:
-                message: bookings deleted
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /bookings/{userid}/{date}/{movieid}:
-    delete:
-      tags: [client]
-      summary: Cancel one booking (owner or admin)
-      operationId: deleteBooking
-      parameters:
-        - $ref: "#/components/parameters/UserId"
-        - $ref: "#/components/parameters/Date"
-        - $ref: "#/components/parameters/MovieId"
-      responses:
-        "200":
-          description: Booking cancelled. Returns the updated bookings of the user.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserBookings"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-
-  /bookings/{userid}/details:
-    get:
-      tags: [client]
-      summary: "[extra] Get the bookings of a user with the movie details (owner or admin)"
-      description: Calls the Movie service (`GET /movies/{movieid}`) for each booked movie.
-      operationId: getDetailedBookings
-      parameters:
-        - $ref: "#/components/parameters/UserId"
-      responses:
-        "200":
-          description: Detailed bookings
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetailedUserBookings"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "502":
-          $ref: "#/components/responses/BadGateway"
-
-  /bookings/movies/{movieid}:
-    get:
-      tags: [admin]
-      summary: "[extra] Get the users who booked a movie"
-      description: Returns, for each date, the users who booked the movie. Useful before deleting a movie.
-      operationId: getBookingsForMovie
-      parameters:
-        - $ref: "#/components/parameters/MovieId"
-      responses:
-        "200":
-          description: Bookings of this movie (may be empty)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MovieBookings"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
+                error: token is missing or invalid
 
 components:
-  # JWT issued by the User service
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
       description: "JWT from `POST /login` on the User service. Header: `Authorization: Bearer <token>`"
-
-  parameters:
-    UserId:
-      name: userid
-      in: path
-      required: true
-      description: User id (username)
-      schema:
-        type: string
-      example: garret_heaton
-    Date:
-      name: date
-      in: path
-      required: true
-      description: Date in the format YYYYMMDD
-      schema:
-        type: string
-        pattern: '^\d{8}$'
-      example: "20151201"
-    MovieId:
-      name: movieid
-      in: path
-      required: true
-      description: Movie id (UUID)
-      schema:
-        type: string
-      example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
-
-  responses:
-    BadRequest:
-      description: The request body is missing or invalid
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: "missing field: movieid"
-    Unauthorized:
-      description: The JWT is missing, invalid or expired
-      headers:
-        WWW-Authenticate:
-          schema:
-            type: string
-          example: Bearer
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: token is missing or invalid
-    Forbidden:
-      description: The operation needs the admin role, or the bookings belong to another user
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: forbidden
-    NotFound:
-      description: No booking found for this user / date / movie
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: booking not found
-    BadGateway:
-      description: The Schedule or Movie service is down or returned an unexpected error
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: Schedule service unavailable
 
   schemas:
     Error:
@@ -318,56 +202,76 @@ components:
       properties:
         error:
           type: string
-    Message:
-      type: object
-      required: [message]
-      properties:
-        message:
-          type: string
 
-    BookingRequest:
+    GraphQLRequest:
       type: object
-      required: [date, movieid]
+      required: [query]
       properties:
-        date:
+        query:
           type: string
-          pattern: '^\d{8}$'
-          example: "20151201"
-        movieid:
-          type: string
-          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
+          description: GraphQL query or mutation
+        variables:
+          type: object
+          additionalProperties: true
+          description: Values of the `$variables` used in the query
 
-    BookedDate:
+    GraphQLResponse:
       type: object
-      required: [date, movies]
       properties:
-        date:
-          type: string
-          example: "20151201"
-        movies:
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: One entry per requested operation, with only the requested fields
+        errors:
           type: array
           items:
-            type: string
-          example: [267eedb8-0f5d-42d5-8f43-72426b9fb3e6]
+            type: object
+            properties:
+              message:
+                type: string
+              path:
+                type: array
+                items:
+                  type: string
 
-    UserBookings:
+    # GraphQL types (see booking.graphql)
+    Booking:
       type: object
-      required: [userid, dates]
       properties:
         userid:
           type: string
           example: garret_heaton
-        dates:
-          type: array
-          items:
-            $ref: "#/components/schemas/BookedDate"
-      example:
-        userid: garret_heaton
-        dates:
-          - date: "20151201"
-            movies: [267eedb8-0f5d-42d5-8f43-72426b9fb3e6]
-          - date: "20151202"
-            movies: [276c79ec-a26a-40a6-b3d3-fb242a5947b6]
+        schedule_id:
+          type: string
+          example: 2c064f12-5368-4c94-a1ce-77f6f2f7f86f
+        status:
+          type: string
+          enum: [CONFIRMED, CANCELED]
+        schedule:
+          allOf:
+            - $ref: "#/components/schemas/Schedule"
+          nullable: true
+          description: From the Schedule service; null if the schedule was deleted (or is hidden from the caller)
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          example: "20151201"
+        movie_id:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, AVAILABLE, CANCELED, DELETED]
+        movie:
+          allOf:
+            - $ref: "#/components/schemas/Movie"
+          nullable: true
+          description: From the Movie service; null if the movie is DELETED and the caller is not an admin
 
     Movie:
       type: object
@@ -376,61 +280,12 @@ components:
           type: string
         title:
           type: string
+          example: Creed
+        director:
+          type: string
         rating:
           type: number
           format: float
-        director:
+        status:
           type: string
-
-    DetailedUserBookings:
-      type: object
-      properties:
-        userid:
-          type: string
-        dates:
-          type: array
-          items:
-            type: object
-            properties:
-              date:
-                type: string
-              movies:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Movie"
-      example:
-        userid: garret_heaton
-        dates:
-          - date: "20151201"
-            movies:
-              - id: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
-                title: Creed
-                rating: 8.8
-                director: Ryan Coogler
-          - date: "20151202"
-            movies:
-              - id: 276c79ec-a26a-40a6-b3d3-fb242a5947b6
-                title: The Danish Girl
-                rating: 5.3
-                director: Tom Hooper
-
-    MovieBookings:
-      type: object
-      properties:
-        movieid:
-          type: string
-          example: 267eedb8-0f5d-42d5-8f43-72426b9fb3e6
-        bookings:
-          type: array
-          items:
-            type: object
-            properties:
-              date:
-                type: string
-              users:
-                type: array
-                items:
-                  type: string
-          example:
-            - date: "20151201"
-              users: [chris_rivers, garret_heaton, dwight_schrute]
+          enum: [AVAILABLE, DELETED]

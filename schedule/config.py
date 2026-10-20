@@ -15,3 +15,11 @@ class Config:
     JWT_PUBLIC_KEY = open(public_path).read()
 
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=3)
+
+    MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+
+    MONGO_DB = os.environ.get("MONGO_DB", "cinema")
+
+    MOVIE_URL = os.environ.get("MOVIE_URL", "http://localhost:3200/graphql")
+
+    BOOKING_URL = os.environ.get("BOOKING_URL", "http://localhost:3002/graphql")

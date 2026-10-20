@@ -20,4 +20,6 @@ watchdog
 Werkzeug
 flask-jwt-extended
 python-dotenv
+pymongo
+requests
 cryptography

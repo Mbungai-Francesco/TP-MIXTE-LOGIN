@@ -2,38 +2,38 @@
   "bookings": [
     {
       "userid": "chris_rivers",
-      "dates": [
-        {
-          "date": "20151201",
-          "movies": ["267eedb8-0f5d-42d5-8f43-72426b9fb3e6"]
-        }
-      ]
+      "schedule_id": "2c064f12-5368-4c94-a1ce-77f6f2f7f86f",
+      "status": "CONFIRMED"
     },
     {
       "userid": "garret_heaton",
-      "dates": [
-        {
-          "date": "20151201",
-          "movies": ["267eedb8-0f5d-42d5-8f43-72426b9fb3e6"]
-        },
-        {
-          "date": "20151202",
-          "movies": ["276c79ec-a26a-40a6-b3d3-fb242a5947b6"]
-        }
-      ]
+      "schedule_id": "2c064f12-5368-4c94-a1ce-77f6f2f7f86f",
+      "status": "CONFIRMED"
+    },
+    {
+      "userid": "garret_heaton",
+      "schedule_id": "97648c14-a689-4a7b-bce9-d23736751a9e",
+      "status": "CONFIRMED"
     },
     {
       "userid": "dwight_schrute",
-      "dates": [
-        {
-          "date": "20151201",
-          "movies": ["7daf7208-be4d-4944-a3ae-c1c2f516f3e6","267eedb8-0f5d-42d5-8f43-72426b9fb3e6"]
-        },
-        {
-          "date": "20151205",
-          "movies": ["a8034f44-aee4-44cf-b32c-74cf452aaaae","276c79ec-a26a-40a6-b3d3-fb242a5947b6"]
-        }
-      ]
+      "schedule_id": "18c005ed-916f-4d70-8024-6c931f711f95",
+      "status": "CONFIRMED"
+    },
+    {
+      "userid": "dwight_schrute",
+      "schedule_id": "2c064f12-5368-4c94-a1ce-77f6f2f7f86f",
+      "status": "CONFIRMED"
+    },
+    {
+      "userid": "dwight_schrute",
+      "schedule_id": "8cbaf991-021d-4fab-a854-9e3fe8810ebf",
+      "status": "CONFIRMED"
+    },
+    {
+      "userid": "dwight_schrute",
+      "schedule_id": "9237becf-76de-4019-a7ff-95f75156819a",
+      "status": "CONFIRMED"
     }
   ]
 }

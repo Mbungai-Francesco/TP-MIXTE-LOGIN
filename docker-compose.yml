@@ -1,7 +1,100 @@
+# Whole application: MongoDB + its web UI + the 4 services
+# Start everything with: docker compose up -d --build
+# Credentials come from the .env file next to this one (see .env.example)
+
+x-service: &service
+  volumes:
+    - ./keys/public_key.pem:/keys/public_key.pem:ro
+  env_file:
+    - .env
+  depends_on:
+    mongo:
+      condition: service_healthy
+
 services:
+  mongo:
+    image: mongo:7
+    container_name: mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    # the services wait until Mongo answers before seeding their collections
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # web UI: http://localhost:8081
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: mongo-express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  user:
+    <<: *service
+    build:
+      context: .
+      dockerfile: user/Dockerfile
+    ports:
+      - "3004:3004"
+    # the User service also needs the private key to sign the tokens
+    volumes:
+      - ./keys:/keys:ro
+    environment:
+      # inside Docker, Mongo is reached by its container name, not localhost
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      BOOKING_URL: http://booking:3002/graphql
+
   movie:
-    build: ./movie/
+    <<: *service
+    build:
+      context: .
+      dockerfile: movie/Dockerfile
     ports:
       - "3200:3200"
-  # to continue
+    environment:
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      SCHEDULE_URL: http://schedule:3003
 
+  schedule:
+    <<: *service
+    build:
+      context: .
+      dockerfile: schedule/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MOVIE_URL: http://movie:3200/graphql
+      BOOKING_URL: http://booking:3002/graphql
+
+  booking:
+    <<: *service
+    build:
+      context: .
+      dockerfile: booking/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      MOVIE_URL: http://movie:3200/graphql
+      SCHEDULE_URL: http://schedule:3003
+      USER_URL: http://user:3004
+
+volumes:
+  mongo-data:
