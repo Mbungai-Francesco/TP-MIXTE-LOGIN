@@ -1,0 +1,1423 @@
+{
+  "info": {
+    "_postman_id": "88b545ce-c89f-433c-90c1-726f57d11042",
+    "name": "Scénario : une journée au cinéma",
+    "description": "Une histoire complète qui traverse les 4 services, dans l'ordre chronologique.\n\nLe matin, l'admin ajoute un nouveau film et le programme pour demain et après-demain. Camille découvre le site, crée son compte, se trompe de mot de passe, regarde les films et les séances, puis réserve. Plus tard, l'admin doit annuler une séance : la réservation de Camille est annulée automatiquement. Le lendemain, Camille le constate et supprime son compte. Pour finir, l'admin retire le film.\n\nChaque exécution crée son propre film et son propre compte : la collection peut être relancée autant de fois que voulu.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1 - Admin : prépare le programme",
+      "item": [
+        {
+          "name": "Se connecte",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const run = Date.now().toString(36);",
+                  "pm.collectionVariables.set(\"run\", run);",
+                  "function ymd(d) { return d.toISOString().slice(0, 10).replace(/-/g, \"\"); }",
+                  "const day = 86400000;",
+                  "pm.collectionVariables.set(\"tomorrow\", ymd(new Date(Date.now() + day)));",
+                  "pm.collectionVariables.set(\"after_tomorrow\", ymd(new Date(Date.now() + 2 * day)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"admin_token\", body.access_token);",
+                  "pm.test(\"c'est bien un admin\", function () {",
+                  "    pm.expect(body.token_type).to.eql(\"Bearer\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ajoute un nouveau film",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of add_movie\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.add_movie;",
+                  "    pm.expect(r.id).to.eql(\"dune-2-\" + pm.collectionVariables.get(\"run\"));",
+                  "    pm.expect(r.status).to.eql(\"AVAILABLE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{movie_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_movie(_id: \"dune-2-{{run}}\", _title: \"Dune : Deuxième partie\", _director: \"Denis Villeneuve\", _rate: 8.5) { id title status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Programme le film demain (en brouillon)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"seance_demain\", body.id);",
+                  "pm.test(\"la s\\u00e9ance est en brouillon\", function () {",
+                  "    pm.expect(body.status).to.eql(\"DRAFT\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{tomorrow}}\",\n  \"movie_id\": \"dune-2-{{run}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Programme le film après-demain (en brouillon)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"seance_apres_demain\", body.id);",
+                  "pm.test(\"la s\\u00e9ance est en brouillon\", function () {",
+                  "    pm.expect(body.status).to.eql(\"DRAFT\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{after_tomorrow}}\",\n  \"movie_id\": \"dune-2-{{run}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Vérifie les séances du film",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"deux s\\u00e9ances en brouillon\", function () {",
+                  "    pm.expect(body.length).to.eql(2);",
+                  "    body.forEach(function (s) { pm.expect(s.status).to.eql(\"DRAFT\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules?movie_id=dune-2-{{run}}"
+          }
+        },
+        {
+          "name": "Ouvre la séance de demain aux réservations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"la s\\u00e9ance est AVAILABLE\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"AVAILABLE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/{{seance_demain}}/AVAILABLE"
+          }
+        },
+        {
+          "name": "Ouvre la séance d'après-demain aux réservations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"la s\\u00e9ance est AVAILABLE\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"AVAILABLE\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/{{seance_apres_demain}}/AVAILABLE"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - User : découvre le cinéma et réserve",
+      "item": [
+        {
+          "name": "Regarde le programme du film avant de créer un compte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"deux s\\u00e9ances ouvertes, avec le film\", function () {",
+                  "    pm.expect(body.length).to.eql(2);",
+                  "    body.forEach(function (s) { pm.expect(s.movie.title).to.eql(\"Dune : Deuxième partie\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{schedule_url}}/schedules/details?movie_id=dune-2-{{run}}"
+          }
+        },
+        {
+          "name": "Essaie de réserver sans compte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Crée son compte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"le compte est cr\\u00e9\\u00e9\", function () {",
+                  "    pm.expect(body.id).to.eql(\"camille_\" + pm.collectionVariables.get(\"run\"));",
+                  "    pm.expect(body.role).to.eql(\"USER\");",
+                  "    pm.expect(body.status).to.eql(\"ACTIVE\");",
+                  "});",
+                  "pm.test(\"no password and no Mongo _id in the response\", function () {",
+                  "    const body = pm.response.json();",
+                  "    [].concat(body).forEach(function (u) { pm.expect(u).to.not.have.property(\"password\"); pm.expect(u).to.not.have.property(\"_id\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"camille_{{run}}\",\n  \"email\": \"camille.{{run}}@mail.fr\",\n  \"name\": \"Camille Martin\",\n  \"password\": \"popcorn2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Se trompe de mot de passe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"error message contains \\\"Invalid credentials\\\"\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.error).to.include(\"Invalid credentials\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"camille.{{run}}@mail.fr\",\n  \"password\": \"popcorn2025\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Se connecte avec le bon mot de passe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set(\"camille_token\", body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"camille.{{run}}@mail.fr\",\n  \"password\": \"popcorn2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consulte son profil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"c'est bien son compte\", function () {",
+                  "    pm.expect(body.id).to.eql(\"camille_\" + pm.collectionVariables.get(\"run\"));",
+                  "    pm.expect(body.name).to.eql(\"Camille Martin\");",
+                  "});",
+                  "pm.test(\"no password and no Mongo _id in the response\", function () {",
+                  "    const body = pm.response.json();",
+                  "    [].concat(body).forEach(function (u) { pm.expect(u).to.not.have.property(\"password\"); pm.expect(u).to.not.have.property(\"_id\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              }
+            ],
+            "url": "{{user_url}}/users/me"
+          }
+        },
+        {
+          "name": "Complète son nom",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"le nom est mis \\u00e0 jour\", function () {",
+                  "    pm.expect(body.name).to.eql(\"Camille Martin-Dupont\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/users/camille_{{run}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Camille Martin-Dupont\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Parcourt les films à l'affiche",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of all_movies\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.all_movies;",
+                  "    pm.expect(r.map(m => m.id)).to.include(\"dune-2-\" + pm.collectionVariables.get(\"run\"));",
+                  "    pm.expect(r.length).to.be.at.least(8);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{movie_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ all_movies { id title director rating } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Regarde le détail du nouveau film",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of movie_with_id\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.movie_with_id;",
+                  "    pm.expect(r.title).to.eql(\"Dune : Deuxième partie\");",
+                  "    pm.expect(r.rating).to.eql(8.5);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{movie_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ movie_with_id(_id: \"dune-2-{{run}}\") { title director rating } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Regarde les séances du film",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"deux s\\u00e9ances ouvertes, avec le film\", function () {",
+                  "    pm.expect(body.length).to.eql(2);",
+                  "    body.forEach(function (s) { pm.expect(s.status).to.eql(\"AVAILABLE\"); pm.expect(s.movie.title).to.eql(\"Dune : Deuxième partie\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/details?movie_id=dune-2-{{run}}"
+          }
+        },
+        {
+          "name": "Réserve la séance de demain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of add_booking\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.add_booking;",
+                  "    pm.expect(r.status).to.eql(\"CONFIRMED\");",
+                  "    pm.expect(r.schedule.date).to.eql(pm.collectionVariables.get(\"tomorrow\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_demain}}\") { userid status schedule { date movie { title } } } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Clique deux fois sur « Réserver »",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"GraphQL error contains \\\"already exists\\\"\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, \"an error is expected\").to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(body.errors[0].message).to.include(\"already exists\");",
+                  "});",
+                  "pm.test(\"add_booking is null\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.add_booking).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Réserve aussi la séance d'après-demain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of add_booking\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.add_booking;",
+                  "    pm.expect(r.status).to.eql(\"CONFIRMED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_apres_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Consulte ses réservations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of my_bookings\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.my_bookings;",
+                  "    pm.expect(r.length).to.eql(2);",
+                  "    r.forEach(function (b) { pm.expect(b.status).to.eql(\"CONFIRMED\"); pm.expect(b.schedule.movie.title).to.eql(\"Dune : Deuxième partie\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ my_bookings { status schedule { date movie { title } } } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Change d'avis et annule après-demain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of cancel_booking\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.cancel_booking;",
+                  "    pm.expect(r.status).to.eql(\"CANCELED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { cancel_booking(_schedule_id: \"{{seance_apres_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Essaie de voir les réservations d'un autre client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"GraphQL error contains \\\"forbidden\\\"\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, \"an error is expected\").to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(body.errors[0].message).to.include(\"forbidden\");",
+                  "});",
+                  "pm.test(\"bookings_for_user is null\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.bookings_for_user).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ bookings_for_user(_userid: \"garret_heaton\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Admin : gère un imprévu",
+      "item": [
+        {
+          "name": "Regarde qui a réservé le film",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of bookings_for_movie\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.bookings_for_movie;",
+                  "    pm.expect(r.length).to.eql(2);",
+                  "    pm.expect(r.every(b => b.userid === \"camille_\" + pm.collectionVariables.get(\"run\"))).to.be.true;",
+                  "    pm.expect(r.map(b => b.status)).to.have.members([\"CONFIRMED\", \"CANCELED\"]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ bookings_for_movie(_movie_id: \"dune-2-{{run}}\") { userid status schedule { date } } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Annule la séance de demain (panne du projecteur)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"la s\\u00e9ance est CANCELED\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"CANCELED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/{{seance_demain}}/CANCELED"
+          }
+        },
+        {
+          "name": "Vérifie que les réservations de cette séance sont annulées",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of bookings_for_schedule\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.bookings_for_schedule;",
+                  "    pm.expect(r.length).to.eql(1);",
+                  "    pm.expect(r[0].status).to.eql(\"CANCELED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ bookings_for_schedule(_schedule_id: \"{{seance_demain}}\") { userid status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - User : le lendemain",
+      "item": [
+        {
+          "name": "Voit que sa séance a été annulée",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of my_bookings\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.my_bookings;",
+                  "    const b = r.find(x => x.schedule.date === pm.collectionVariables.get(\"tomorrow\"));",
+                  "    pm.expect(b.status).to.eql(\"CANCELED\");",
+                  "    pm.expect(b.schedule.status).to.eql(\"CANCELED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ my_bookings { status schedule { date status } } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Essaie de réserver à nouveau la séance annulée",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"GraphQL error contains \\\"not open for booking\\\"\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, \"an error is expected\").to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(body.errors[0].message).to.include(\"not open for booking\");",
+                  "});",
+                  "pm.test(\"add_booking is null\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.add_booking).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Déçue, supprime son compte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"compte supprim\\u00e9\", function () {",
+                  "    pm.expect(body.message).to.eql(\"user deleted\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              }
+            ],
+            "url": "{{user_url}}/users/camille_{{run}}"
+          }
+        },
+        {
+          "name": "Ne peut plus se connecter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{user_url}}/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"camille.{{run}}@mail.fr\",\n  \"password\": \"popcorn2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Son ancien token ne permet plus de réserver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"GraphQL error contains \\\"user not found\\\"\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, \"an error is expected\").to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(body.errors[0].message).to.include(\"user not found\");",
+                  "});",
+                  "pm.test(\"add_booking is null\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.add_booking).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{camille_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{booking_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { add_booking(_schedule_id: \"{{seance_apres_demain}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Admin : clôture",
+      "item": [
+        {
+          "name": "Voit le compte de Camille, supprimé",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"statut DELETED\", function () {",
+                  "    pm.expect(body.status).to.eql(\"DELETED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{user_url}}/users/camille_{{run}}"
+          }
+        },
+        {
+          "name": "Retire le film de l'affiche",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"no GraphQL error\", function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.errors, JSON.stringify(body.errors)).to.be.undefined;",
+                  "});",
+                  "pm.test(\"result of delete_movie\", function () {",
+                  "    const body = pm.response.json();",
+                  "    const r = body.data.delete_movie;",
+                  "    pm.expect(r.status).to.eql(\"DELETED\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{movie_url}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation { delete_movie(_id: \"dune-2-{{run}}\") { status } }",
+                "variables": "{}"
+              }
+            }
+          }
+        },
+        {
+          "name": "Les séances restantes du film sont annulées",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test(\"toutes annul\\u00e9es\", function () {",
+                  "    pm.expect(body.length).to.eql(2);",
+                  "    body.forEach(function (s) { pm.expect(s.status).to.eql(\"CANCELED\"); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules?movie_id=dune-2-{{run}}"
+          }
+        },
+        {
+          "name": "Supprime la séance de demain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/{{seance_demain}}"
+          }
+        },
+        {
+          "name": "Supprime la séance d'après-demain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": "{{schedule_url}}/schedules/{{seance_apres_demain}}"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "run",
+      "value": ""
+    },
+    {
+      "key": "tomorrow",
+      "value": ""
+    },
+    {
+      "key": "after_tomorrow",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "camille_token",
+      "value": ""
+    },
+    {
+      "key": "seance_demain",
+      "value": ""
+    },
+    {
+      "key": "seance_apres_demain",
+      "value": ""
+    }
+  ]
+}
